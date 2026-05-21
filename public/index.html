@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PromptForge — Intelligent Prompt Builder</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <h1>PromptForge</h1>
+                <span class="version">v1.0.0</span>
+            </div>
+            <p class="tagline">The Intelligent Prompt Builder</p>
+        </header>
+
+        <!-- Progress Bar -->
+        <div class="progress-container">
+            <div class="progress-steps">
+                <div class="step-indicator active" data-step="1">
+                    <span class="step-num">1</span>
+                    <span class="step-label">Task</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="2">
+                    <span class="step-num">2</span>
+                    <span class="step-label">Persona</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="3">
+                    <span class="step-num">3</span>
+                    <span class="step-label">Description</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="4">
+                    <span class="step-num">4</span>
+                    <span class="step-label">Output</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="5">
+                    <span class="step-num">5</span>
+                    <span class="step-label">Advanced</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="6">
+                    <span class="step-num">6</span>
+                    <span class="step-label">Generate</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wizard Content -->
+        <main class="wizard-content">
+
+            <!-- Step 1: Task Selection -->
+            <section class="wizard-step active" id="step-1">
+                <h2>Step 1: Select Your Task</h2>
+                <p class="step-desc">What type of task do you need help with?</p>
+                <div class="task-grid" id="task-grid"></div>
+                <div class="template-section">
+                    <h3>Or start from a template:</h3>
+                    <div class="template-grid" id="template-grid"></div>
+                </div>
+            </section>
+
+            <!-- Step 2: Persona -->
+            <section class="wizard-step" id="step-2">
+                <h2>Step 2: Assign a Persona</h2>
+                <p class="step-desc">Who should the AI pretend to be?</p>
+                <p class="tip">💡 Assigning a role helps the AI adopt relevant expertise and tone.</p>
+                <div class="persona-grid" id="persona-grid"></div>
+                <div class="custom-persona">
+                    <label for="custom-persona-input">Or describe a custom persona:</label>
+                    <input type="text" id="custom-persona-input" placeholder="e.g., A friendly neighborhood librarian with 20 years of experience">
+                </div>
+                <button class="btn-skip" onclick="skipPersona()">Skip (no persona)</button>
+            </section>
+
+            <!-- Step 3: Description & Context -->
+            <section class="wizard-step" id="step-3">
+                <h2>Step 3: Describe Your Task</h2>
+                <p class="tip">💡 Be specific. Instead of "write about dogs," try "write a 300-word paragraph about health benefits of adopting rescue dogs for families with children."</p>
+                <div class="form-group">
+                    <label for="description">What do you need the AI to do? <span class="required">*</span></label>
+                    <textarea id="description" rows="5" placeholder="Describe your task in detail..." minlength="10"></textarea>
+                    <span class="char-count" id="desc-count">0 characters</span>
+                </div>
+                <div class="form-group">
+                    <label for="context">Context or input data (optional):</label>
+                    <textarea id="context" rows="4" placeholder="Paste any reference text, data, or background information..."></textarea>
+                </div>
+            </section>
+
+            <!-- Step 4: Output Configuration -->
+            <section class="wizard-step" id="step-4">
+                <h2>Step 4: Output Configuration</h2>
+
+                <div class="config-section">
+                    <h3>Format</h3>
+                    <div class="radio-grid" id="format-grid"></div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Length</h3>
+                    <div class="radio-grid" id="length-grid"></div>
+                </div>
+
+                <div class="config-section">
+                    <h3>Tone & Style <span class="hint">(select up to 3)</span></h3>
+                    <div class="checkbox-grid" id="tone-grid"></div>
+                </div>
+
+                <div class="config-section inline-fields">
+                    <div class="form-group">
+                        <label for="language">Language</label>
+                        <input type="text" id="language" value="English" placeholder="English">
+                    </div>
+                    <div class="form-group">
+                        <label for="audience">Target Audience</label>
+                        <select id="audience">
+                            <option value="">-- Select (optional) --</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 5: Examples & Advanced -->
+            <section class="wizard-step" id="step-5">
+                <h2>Step 5: Examples & Advanced Options</h2>
+
+                <div class="config-section">
+                    <h3>Few-Shot Examples</h3>
+                    <p class="tip">💡 Even 1 example dramatically improves output quality.</p>
+                    <div id="examples-container"></div>
+                    <button class="btn-secondary" id="add-example-btn" onclick="addExample()">+ Add Example</button>
+                </div>
+
+                <div class="config-section">
+                    <h3>Constraints & Rules</h3>
+                    <textarea id="constraints" rows="3" placeholder="e.g., Do not use jargon&#10;Must include citations&#10;Avoid bullet points"></textarea>
+                </div>
+
+                <div class="config-section">
+                    <h3>Advanced Options</h3>
+                    <div class="toggle-group">
+                        <label class="toggle-item">
+                            <input type="checkbox" id="opt-cot">
+                            <span>🧠 Chain-of-Thought</span>
+                            <small>Ask AI to think step-by-step</small>
+                        </label>
+                        <label class="toggle-item">
+                            <input type="checkbox" id="opt-clarify">
+                            <span>❓ Clarifying Questions</span>
+                            <small>Ask AI to request clarification first</small>
+                        </label>
+                        <label class="toggle-item">
+                            <input type="checkbox" id="opt-variations">
+                            <span>🔀 Multiple Variations</span>
+                            <small>Generate N different options</small>
+                        </label>
+                        <label class="toggle-item">
+                            <input type="checkbox" id="opt-confidence">
+                            <span>📊 Confidence Rating</span>
+                            <small>Ask AI to rate its confidence 1-10</small>
+                        </label>
+                    </div>
+                    <div class="variation-count-group" id="variation-count-group" style="display:none;">
+                        <label for="variation-count">Number of variations:</label>
+                        <input type="number" id="variation-count" value="3" min="2" max="10">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 6: Review & Generate -->
+            <section class="wizard-step" id="step-6">
+                <h2>Step 6: Review & Generate</h2>
+                <div class="review-panel" id="review-panel"></div>
+                <div class="generate-section" id="generate-section" style="display:none;">
+                    <div class="score-display" id="score-display"></div>
+                    <div class="prompt-output" id="prompt-output"></div>
+                    <div class="action-buttons" id="action-buttons"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Navigation -->
+        <nav class="wizard-nav">
+            <button class="btn-back" id="btn-back" onclick="prevStep()" disabled>← Back</button>
+            <button class="btn-next" id="btn-next" onclick="nextStep()">Next →</button>
+            <button class="btn-generate" id="btn-generate" onclick="generatePrompt()" style="display:none;">⚡ Generate Prompt</button>
+        </nav>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
