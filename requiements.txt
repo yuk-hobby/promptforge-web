@@ -1,2 +1,0 @@
-# Vercel Python serverless functions
-# No external dependencies needed - uses standard library only
