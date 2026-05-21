@@ -1,14 +1,7 @@
 {
-    "framework": "nextjs",
-    "regions": ["iad1"],
-    "env": {
-      "OPENROUTER_API_KEY": "@openrouter-api-key",
-      "OPENAI_API_KEY": "@openai-api-key",
-      "ANTHROPIC_API_KEY": "@anthropic-api-key"
-    },
-    "functions": {
-      "app/api/**/*.ts": {
-        "maxDuration": 60
-      }
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 60
     }
   }
+}

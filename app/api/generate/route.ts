@@ -1,102 +1,189 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callLLM, callLLMStream } from "@/lib/llm-client";
-import { META_PROMPT } from "@/lib/meta-prompts";
-import { GenerateRequest } from "@/lib/types";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const META_PROMPT = `You are an elite prompt engineer. Your sole task is to generate optimized, production-quality prompts that will be fed to Large Language Models.
+
+The user will provide you with a rough description of what they want an AI to do. Your job is to transform that rough description into a perfectly crafted prompt that will get the best possible results from any LLM.
+
+YOUR PROCESS:
+1. Analyze the user's intent — what are they REALLY trying to achieve?
+2. Identify implicit requirements they didn't state but clearly need
+3. Structure the prompt using proven prompt engineering techniques
+4. Add specificity, constraints, and formatting instructions
+5. Include a role/persona if it would improve output quality
+6. Add output format specifications if not obvious
+7. Include guard rails and edge case handling where appropriate
+
+TECHNIQUES TO APPLY (when appropriate):
+- Role assignment ("Act as...")
+- Task decomposition (break complex tasks into steps)
+- Output formatting (specify structure, length, format)
+- Few-shot examples (if it would help)
+- Chain-of-thought (for reasoning tasks)
+- Constraint specification (what to include AND avoid)
+- Audience awareness (adjust language level)
+
+RULES:
+- Output ONLY the generated prompt — no explanations, no "Here's your prompt:" prefix
+- Do NOT wrap in code blocks or quotes
+- Copy-paste ready
+- Natural professional language, not robotic
+- Scale complexity to the task
+- If vague, make reasonable assumptions`;
 
 export async function POST(request: NextRequest) {
   try {
-    const body: GenerateRequest = await request.json();
-    const { intent, followUpQA, context, model, provider, temperature } = body;
+    const { intent, followUpQA, context, model, provider, temperature } = await request.json();
 
     if (!intent || intent.trim().length < 5) {
-      return NextResponse.json(
-        { error: "Please provide a description of what you need." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Please describe what you need (min 10 characters)." }, { status: 400 });
     }
 
-    // Build the user message with all context
-    let followUpSection = "";
+    // Build user message
+    let userMessage = intent;
     if (followUpQA && Object.keys(followUpQA).length > 0) {
-      followUpSection = "\n\nADDITIONAL DETAILS FROM USER:\n";
+      userMessage += "\n\nAdditional details:";
       for (const [q, a] of Object.entries(followUpQA)) {
-        followUpSection += `Q: ${q}\nA: ${a}\n`;
+        if (a) userMessage += `\n- ${q}: ${a}`;
       }
     }
-
-    let contextSection = "";
-    if (context && context.trim()) {
-      contextSection = `\n\nREFERENCE MATERIAL PROVIDED:\n---\n${context}\n---`;
+    if (context?.trim()) {
+      userMessage += `\n\nReference material:\n---\n${context}\n---`;
     }
 
-    const userMessage = `${intent}${followUpSection}${contextSection}`;
+    // Determine provider and API key
+    const activeProvider = provider || process.env.DEFAULT_PROVIDER || "openrouter";
+    const activeModel = model || process.env.DEFAULT_MODEL || "openai/gpt-4o";
 
-    const systemPrompt = META_PROMPT;
-
-    // Check if streaming is requested
-    const wantsStream = request.headers.get("accept") === "text/event-stream";
-
-    if (wantsStream) {
-      // Return streaming response
-      const stream = await callLLMStream({
-        systemPrompt,
-        userMessage,
-        model,
-        provider,
-        temperature,
-      });
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-    }
-
-    // Non-streaming response
-    const result = await callLLM({
-      systemPrompt,
-      userMessage,
-      model,
-      provider,
-      temperature,
-    });
+    const result = await callLLM(activeProvider, activeModel, META_PROMPT, userMessage, temperature);
 
     return NextResponse.json({
       prompt: result.text,
-      model: model || process.env.DEFAULT_MODEL || "openai/gpt-4o",
-      provider: provider || process.env.DEFAULT_PROVIDER || "openrouter",
+      model: activeModel,
+      provider: activeProvider,
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
-      estimatedCost: estimateCost(model || "openai/gpt-4o", result.tokensInput, result.tokensOutput),
+      estimatedCost: result.estimatedCost,
     });
-  } catch (error: any) {
-    console.error("Generate error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to generate prompt" },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    console.error("[generate]", err.message);
+    return NextResponse.json({ error: err.message || "Generation failed" }, { status: 500 });
   }
 }
 
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number | null {
-  // Rough cost estimates per 1K tokens
-  const costs: Record<string, { input: number; output: number }> = {
-    "openai/gpt-4o": { input: 0.0025, output: 0.01 },
-    "openai/gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-    "anthropic/claude-sonnet-4": { input: 0.003, output: 0.015 },
-    "anthropic/claude-3.5-sonnet": { input: 0.003, output: 0.015 },
-    "google/gemini-2.0-flash-001": { input: 0.0001, output: 0.0004 },
-    "deepseek/deepseek-chat": { input: 0.00014, output: 0.00028 },
+async function callLLM(
+  provider: string,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  temperature?: number
+) {
+  const temp = temperature ?? 0.7;
+
+  if (provider === "anthropic") {
+    return callAnthropic(model, systemPrompt, userMessage, temp);
+  }
+  // OpenAI, OpenRouter, and compatible all use OpenAI protocol
+  return callOpenAICompatible(provider, model, systemPrompt, userMessage, temp);
+}
+
+async function callOpenAICompatible(
+  provider: string,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  temperature: number
+) {
+  let apiBase: string;
+  let apiKey: string;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+  if (provider === "openrouter") {
+    apiBase = "https://openrouter.ai/api/v1";
+    apiKey = process.env.OPENROUTER_API_KEY || "";
+    headers["HTTP-Referer"] = "https://promptforge.vercel.app";
+    headers["X-Title"] = "PromptForge";
+  } else if (provider === "openai") {
+    apiBase = "https://api.openai.com/v1";
+    apiKey = process.env.OPENAI_API_KEY || "";
+  } else {
+    apiBase = process.env.CUSTOM_API_BASE || "http://localhost:1234/v1";
+    apiKey = process.env.CUSTOM_API_KEY || "not-needed";
+  }
+
+  if (!apiKey) throw new Error(`No API key set for ${provider}. Add it in Vercel Environment Variables.`);
+
+  headers["Authorization"] = `Bearer ${apiKey}`;
+
+  const res = await fetch(`${apiBase}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature,
+      max_tokens: 4096,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err?.error?.message || err?.message || `HTTP ${res.status}`;
+    throw new Error(`${provider} error (${res.status}): ${msg}`);
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || "";
+  const usage = data.usage || {};
+
+  return {
+    text,
+    tokensInput: usage.prompt_tokens || 0,
+    tokensOutput: usage.completion_tokens || 0,
+    estimatedCost: null as number | null,
   };
+}
 
-  const modelCost = costs[model];
-  if (!modelCost) return null;
+async function callAnthropic(
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  temperature: number
+) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("No Anthropic API key set. Add ANTHROPIC_API_KEY in Vercel Environment Variables.");
 
-  return (inputTokens / 1000) * modelCost.input + (outputTokens / 1000) * modelCost.output;
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+      temperature,
+      max_tokens: 4096,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Anthropic error (${res.status}): ${err?.error?.message || res.statusText}`);
+  }
+
+  const data = await res.json();
+  return {
+    text: data.content?.[0]?.text || "",
+    tokensInput: data.usage?.input_tokens || 0,
+    tokensOutput: data.usage?.output_tokens || 0,
+    estimatedCost: null as number | null,
+  };
 }
